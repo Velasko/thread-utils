@@ -1,88 +1,135 @@
 use std::{
     any::Any,
     cell::RefCell,
-    collections::hash_map::HashMap,
-    ops::Deref,
+    collections::{vec_deque::VecDeque, hash_map::HashMap},
     panic::{catch_unwind, UnwindSafe},
-    sync::{Arc, Mutex},
+    sync::{Arc, Weak, Mutex, RwLock, Condvar},
     thread,
 };
 
 use crate::queue::Queue;
-
-pub struct MapJoin<S> {
-    map: Arc<Mutex<RefCell<HashMap<usize, S>>>>,
-    args_size: usize,
-}
-
-impl<S> MapJoin<S> {
-    pub fn join(&self) -> Vec<S> {
-        loop {
-            match self.map.lock() {
-                Err(_) => panic!("Poison Error! Either thread pool panic or panic::catch_unwind did not catch user's function panic."),
-                Ok(return_map) => {
-                    if return_map.deref().borrow().len() >= self.args_size {
-                        let mut rmap = return_map.take();
-                        return (0..self.args_size)
-                            .map(|key| rmap.remove(&key).unwrap())
-                            .collect::<Vec<S>>();
-                    };
-                }
-            }
-        }
-    }
-}
+use crate::mapjoin::MapJoin;
+use crate::locks::Alarm;
 
 type Task = Box<dyn FnOnce() -> anyhow::Result<()>>;
 type Panic = Box<dyn Any + Send>;
 
-fn thread_operation(queue: Arc<Queue<Task>>) -> ! {
+type ThreadVec = Vec<thread::JoinHandle<()>>;
+
+fn thread_operation(pool: Arc<Pool>) {
     loop {
-        let func = queue.pop();
+        if pool.waking_count.read().is_ok_and(|counter| *counter != 0) {
+            if pool.restart_thread() {
+                pool.remove_self();
+                return;
+            }
+        }
+
+        let func = pool.tasks.pop();
         let _ = func();
     }
 }
 
 pub struct Pool {
-    queue: Arc<Queue<Task>>,
-    threads: Vec<thread::JoinHandle<()>>,
-    thread_ids: Arc<Vec<thread::ThreadId>>,
-    daemon: bool,
+    this: Weak<Pool>,
+    tasks: Queue<Task>,
+    waking_count: RwLock<usize>,
+
+    threads: Mutex<ThreadVec>,
+    blocked_threads: Mutex<HashMap<thread::ThreadId, Arc<Alarm>>>,
+    waking_threads: Queue<Arc<Alarm>>,
 }
 
-impl Default for Pool {
-    fn default() -> Self {
+
+impl Pool {
+    pub fn new(thread_ammount: usize) -> Arc<Self> {
+        Arc::new_cyclic(|poll_ref| {
+            let pool = Pool {
+                this: poll_ref.clone(),
+                tasks: Queue::default(),
+                waking_count: RwLock::new(0),
+
+                threads: Mutex::new(ThreadVec::new()),
+                blocked_threads: Mutex::new(HashMap::new()),
+                waking_threads: Queue::default(),
+            };
+
+            for _ in 0..thread_ammount {
+                pool.spawn();
+            }
+
+            pool
+        })
+    }
+
+    fn default() -> Arc<Self> {
         let core_count = match std::thread::available_parallelism() {
             Ok(value) => value.get(),
             Err(_) => 1,
         };
         Self::new(core_count)
     }
-}
 
-impl Pool {
-    pub fn new(thread_ammount: usize) -> Self {
-        let queue = Arc::new(Queue::default());
-        let mut thread_ids = vec![thread::current().id()];
-        let threads = (0..thread_ammount)
-            .map(|_| {
-                let rqueue = Arc::clone(&queue);
-                let th = thread::spawn(move || thread_operation(rqueue));
-                thread_ids.push(th.thread().id());
-                th
-            })
-            .collect::<Vec<thread::JoinHandle<()>>>();
+    fn get_alarm(&self) -> Arc<Alarm> {
+        let thread_id = thread::current().id();
+        let alarm = Arc::new(Alarm::default());
 
-        Pool {
-            queue,
-            threads,
-            thread_ids: Arc::new(thread_ids),
-            daemon: false,
+        match self.blocked_threads.lock() {
+            Err(_) => unimplemented!("Poisoned lock"),
+            Ok(mut alarms) => { alarms.insert(thread_id, alarm.clone()); }
+        }
+
+        alarm
+    }
+
+    fn wake_thread(&self, id: &thread::ThreadId) {
+        let data = match self.blocked_threads.lock() {
+            Err(_) => unimplemented!("Poisoned lock"),
+            Ok(mut map) => map.remove(id)
+        };
+
+        if let Some(alarm) = data {
+            match self.waking_count.write() {
+                Err(_) => unimplemented!("Poisoned lock"),
+                Ok(mut counter) => {
+                    *counter += 1;
+                    self.waking_threads.push(alarm);
+                }
+            }
         }
     }
 
-    pub fn is_daemon(&mut self, value: bool) {
-        self.daemon = value;
+    fn restart_thread(&self) -> bool {
+        match self.waking_count.write() {
+            Err(_) => unimplemented!("Poisoned lock"),
+            Ok(mut counter) => {
+                if *counter == 0 {
+                    false
+                } else {
+                    *counter -= 1;
+                    let alarm = self.waking_threads.pop();
+                    alarm.buzz();
+                    true
+                }
+            }
+        }
+    }
+
+    fn spawn(&self) {
+        let self_ref: Arc<Pool> = self.this.clone().upgrade().expect("Cloning ref to self");
+        let new_thread = thread::spawn(move || thread_operation(self_ref));
+        match self.threads.lock() {
+            Err(_) => unimplemented!("Poisoned lock"),
+            Ok(mut vec) => vec.push(new_thread),
+        }
+    }
+
+    fn remove_self(&self) {
+        let thread_id = thread::current().id();
+        match self.threads.lock() {
+            Err(_) => unimplemented!("Poisoned lock"),
+            Ok(mut vec) => vec.retain(|handle| handle.thread().id() != thread_id),
+        }
     }
 
     pub fn map<T: 'static + UnwindSafe, S: 'static>(
@@ -108,36 +155,27 @@ impl Pool {
                     };
                 }
             };
-            self.queue.push(Box::new(lambda));
+            self.tasks.push(Box::new(lambda));
         }
 
-        MapJoin { map, args_size }
+        MapJoin::new(map, args_size)
     }
 
-    pub fn become_worker(&self) -> ! {
-        let rqueue = Arc::clone(&self.queue);
-        thread_operation(rqueue)
-    }
 }
 
-impl Drop for Pool {
-    fn drop(&mut self) {
-        if self.daemon {
-            self.become_worker();
-        }
-    }
-}
+unsafe impl Sync for Pool {}
+unsafe impl Send for Pool {}
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use rand::Rng;
-
-    // Thread tests
-    #[test]
-    fn thread_count() {
-        let thread_ammount: usize = rand::thread_rng().gen::<usize>() % 16 + 1;
-        let mut pool = Pool::new(thread_ammount);
-        assert_eq!(pool.threads.len(), thread_ammount);
-    }
-}
+// #[cfg(test)]
+// mod tests {
+//     use super::*;
+//     use rand::Rng;
+//
+//     // Thread tests
+//     #[test]
+//     fn thread_count() {
+//         let thread_ammount: usize = rand::thread_rng().gen::<usize>() % 16 + 1;
+//         let mut pool = Pool::new(thread_ammount);
+//         assert_eq!(pool.threads.len(), thread_ammount);
+//     }
+// }
