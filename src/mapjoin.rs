@@ -12,14 +12,12 @@ pub struct MapJoin<S> {
 
 impl<S> MapJoin<S> {
     pub fn new(map: Arc<Mutex<RefCell<HashMap<usize, S>>>>, args_size: usize) -> Self {
-        Self {
-            map,
-            args_size
-        }
+        Self { map, args_size }
     }
 
     pub fn join(&self) -> Vec<S> {
         loop {
+            todo!("Change MapJoin to custom in order to not block a pool thread");
             match self.map.lock() {
                 Err(_) => panic!("Poison Error! Either thread pool panic or panic::catch_unwind did not catch user's function panic."),
                 Ok(return_map) => {

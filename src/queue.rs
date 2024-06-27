@@ -7,7 +7,7 @@ use std::{
 pub struct Queue<T> {
     data: Mutex<RefCell<VecDeque<T>>>,
     notifier: Condvar,
-    pop_lock: Mutex<()>
+    pop_lock: Mutex<()>,
 }
 
 impl<T> Default for Queue<T> {
@@ -15,13 +15,12 @@ impl<T> Default for Queue<T> {
         Self {
             data: Mutex::new(RefCell::new(VecDeque::new())),
             notifier: Condvar::new(),
-            pop_lock: Mutex::new(())
+            pop_lock: Mutex::new(()),
         }
     }
 }
 
 impl<T> Queue<T> {
-
     pub fn push(&self, data: T) {
         match self.data.lock() {
             Err(_) => unimplemented!("Poisoned lock"),
@@ -48,7 +47,9 @@ impl<T> Queue<T> {
                                         let queue = guard.get_mut();
                                         match queue.pop_front() {
                                             None => (), // spurious wakeup
-                                            Some(item) => {break item;}
+                                            Some(item) => {
+                                                break item;
+                                            }
                                         }
                                     }
                                 }
@@ -62,7 +63,6 @@ impl<T> Queue<T> {
         self.notifier.notify_one();
         data
     }
-
 }
 
 unsafe impl<T> Sync for Queue<T> {}
