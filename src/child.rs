@@ -1,7 +1,4 @@
-use std::{
-    cell::{Cell, RefCell},
-    sync::Arc,
-};
+use std::{cell::RefCell, sync::Arc};
 
 use crate::pool::Pool;
 
@@ -24,7 +21,6 @@ pub fn thread_operation(pool: Arc<Pool>) {
             }
         }
 
-        let func = pool.fetch_task();
-        let _ = func();
+        pool.fetch_task().map(|func| func());
     }
 }

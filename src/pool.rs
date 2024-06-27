@@ -57,8 +57,8 @@ impl Pool {
         Self::new(core_count)
     }
 
-    pub(crate) fn fetch_task(&self) -> Task {
-        self.tasks.pop()
+    pub(crate) fn fetch_task(&self) -> Option<Task> {
+        self.tasks.try_pop()
     }
 
     pub(crate) fn any_thread_waking_up(&self) -> bool {
@@ -94,6 +94,8 @@ impl Pool {
                 }
             }
         }
+
+        self.tasks.wake_up();
     }
 
     pub(crate) fn restart_thread(&self) -> bool {
