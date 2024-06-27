@@ -1,34 +1,22 @@
+use lazy_static::lazy_static;
 use std::{
     any::Any,
     cell::RefCell,
-    collections::{vec_deque::VecDeque, hash_map::HashMap},
+    collections::{hash_map::HashMap, vec_deque::VecDeque},
     panic::{catch_unwind, UnwindSafe},
-    sync::{Arc, Weak, Mutex, RwLock, Condvar},
+    sync::{Arc, Condvar, Mutex, OnceLock, RwLock, Weak},
     thread,
 };
 
-use crate::queue::Queue;
-use crate::mapjoin::MapJoin;
+use crate::child;
 use crate::locks::Alarm;
+use crate::mapjoin::MapJoin;
+use crate::queue::Queue;
 
 type Task = Box<dyn FnOnce() -> anyhow::Result<()>>;
 type Panic = Box<dyn Any + Send>;
 
 type ThreadVec = Vec<thread::JoinHandle<()>>;
-
-fn thread_operation(pool: Arc<Pool>) {
-    loop {
-        if pool.waking_count.read().is_ok_and(|counter| *counter != 0) {
-            if pool.restart_thread() {
-                pool.remove_self();
-                return;
-            }
-        }
-
-        let func = pool.tasks.pop();
-        let _ = func();
-    }
-}
 
 pub struct Pool {
     this: Weak<Pool>,
@@ -39,7 +27,6 @@ pub struct Pool {
     blocked_threads: Mutex<HashMap<thread::ThreadId, Arc<Alarm>>>,
     waking_threads: Queue<Arc<Alarm>>,
 }
-
 
 impl Pool {
     pub fn new(thread_ammount: usize) -> Arc<Self> {
@@ -62,7 +49,7 @@ impl Pool {
         })
     }
 
-    fn default() -> Arc<Self> {
+    pub fn default() -> Arc<Self> {
         let core_count = match std::thread::available_parallelism() {
             Ok(value) => value.get(),
             Err(_) => 1,
@@ -70,22 +57,32 @@ impl Pool {
         Self::new(core_count)
     }
 
-    fn get_alarm(&self) -> Arc<Alarm> {
+    pub(crate) fn fetch_task(&self) -> Task {
+        self.tasks.pop()
+    }
+
+    pub(crate) fn any_thread_waking_up(&self) -> bool {
+        self.waking_count.read().is_ok_and(|counter| *counter != 0)
+    }
+
+    pub(crate) fn get_alarm(&self) -> Arc<Alarm> {
         let thread_id = thread::current().id();
         let alarm = Arc::new(Alarm::default());
 
         match self.blocked_threads.lock() {
             Err(_) => unimplemented!("Poisoned lock"),
-            Ok(mut alarms) => { alarms.insert(thread_id, alarm.clone()); }
+            Ok(mut alarms) => {
+                alarms.insert(thread_id, alarm.clone());
+            }
         }
 
         alarm
     }
 
-    fn wake_thread(&self, id: &thread::ThreadId) {
+    pub(crate) fn wake_thread(&self, id: &thread::ThreadId) {
         let data = match self.blocked_threads.lock() {
             Err(_) => unimplemented!("Poisoned lock"),
-            Ok(mut map) => map.remove(id)
+            Ok(mut map) => map.remove(id),
         };
 
         if let Some(alarm) = data {
@@ -99,7 +96,7 @@ impl Pool {
         }
     }
 
-    fn restart_thread(&self) -> bool {
+    pub(crate) fn restart_thread(&self) -> bool {
         match self.waking_count.write() {
             Err(_) => unimplemented!("Poisoned lock"),
             Ok(mut counter) => {
@@ -117,14 +114,14 @@ impl Pool {
 
     fn spawn(&self) {
         let self_ref: Arc<Pool> = self.this.clone().upgrade().expect("Cloning ref to self");
-        let new_thread = thread::spawn(move || thread_operation(self_ref));
+        let new_thread = thread::spawn(move || child::thread_operation(self_ref));
         match self.threads.lock() {
             Err(_) => unimplemented!("Poisoned lock"),
             Ok(mut vec) => vec.push(new_thread),
         }
     }
 
-    fn remove_self(&self) {
+    pub(crate) fn remove_self(&self) {
         let thread_id = thread::current().id();
         match self.threads.lock() {
             Err(_) => unimplemented!("Poisoned lock"),
@@ -160,7 +157,6 @@ impl Pool {
 
         MapJoin::new(map, args_size)
     }
-
 }
 
 unsafe impl Sync for Pool {}
