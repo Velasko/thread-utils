@@ -1,11 +1,11 @@
 use std::{
     cell::RefCell,
     collections::vec_deque::VecDeque,
-    sync::{Condvar, Mutex},
+    sync::{Condvar, Mutex, RwLock},
 };
 
 pub struct Queue<T> {
-    data: Mutex<RefCell<VecDeque<T>>>,
+    data: RwLock<RefCell<VecDeque<T>>>,
     notifier: Condvar,
     pop_lock: Mutex<()>,
 }
@@ -13,7 +13,7 @@ pub struct Queue<T> {
 impl<T> Default for Queue<T> {
     fn default() -> Self {
         Self {
-            data: Mutex::new(RefCell::new(VecDeque::new())),
+            data: RwLock::new(RefCell::new(VecDeque::new())),
             notifier: Condvar::new(),
             pop_lock: Mutex::new(()),
         }
@@ -22,7 +22,7 @@ impl<T> Default for Queue<T> {
 
 impl<T> Queue<T> {
     pub fn push(&self, data: T) {
-        match self.data.lock() {
+        match self.data.write() {
             Err(_) => unimplemented!("Poisoned lock"),
             Ok(mut guard) => {
                 let queue = guard.get_mut();
@@ -32,29 +32,24 @@ impl<T> Queue<T> {
         }
     }
 
-    pub fn pop(&self) -> T {
-        let data = {
-            loop {
-                match self.pop_lock.lock() {
+    pub fn try_pop(&self) -> Option<T> {
+        let data = match self.pop_lock.lock() {
+            Err(_) => unimplemented!("Poisoned lock"),
+            Ok(pop_guard) => {
+                let queue_size = match self.data.read() {
                     Err(_) => unimplemented!("Poisoned lock"),
-                    Ok(pop_guard) => {
-                        match self.notifier.wait(pop_guard) {
-                            Err(_) => unimplemented!("Poisoned lock"),
-                            Ok(_) => {
-                                match self.data.lock() {
-                                    Err(_) => unimplemented!("Poisoned lock"),
-                                    Ok(mut guard) => {
-                                        let queue = guard.get_mut();
-                                        match queue.pop_front() {
-                                            None => (), // spurious wakeup
-                                            Some(item) => {
-                                                break item;
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
+                    Ok(queue) => (*queue).borrow().len(),
+                };
+
+                if queue_size == 0 {
+                    self.notifier.wait(pop_guard);
+                }
+
+                match self.data.write() {
+                    Err(_) => unimplemented!("Poisoned lock"),
+                    Ok(mut guard) => {
+                        let queue = guard.get_mut();
+                        queue.pop_front()
                     }
                 }
             }
@@ -62,6 +57,21 @@ impl<T> Queue<T> {
 
         self.notifier.notify_one();
         data
+    }
+
+    pub fn pop(&self) -> T {
+        loop {
+            match self.try_pop() {
+                None => (),
+                Some(value) => {
+                    return value;
+                }
+            }
+        }
+    }
+
+    pub fn wake_up(&self) {
+        self.notifier.notify_one();
     }
 }
 
