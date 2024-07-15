@@ -1,10 +1,9 @@
-use lazy_static::lazy_static;
 use std::{
     any::Any,
     cell::RefCell,
-    collections::{hash_map::HashMap, vec_deque::VecDeque},
+    collections::hash_map::HashMap,
     panic::{catch_unwind, UnwindSafe},
-    sync::{Arc, Condvar, Mutex, OnceLock, RwLock, Weak},
+    sync::{Arc, Mutex, RwLock, Weak},
     thread,
 };
 
@@ -30,23 +29,21 @@ pub struct Pool {
 
 impl Pool {
     pub fn new(thread_ammount: usize) -> Arc<Self> {
-        Arc::new_cyclic(|poll_ref| {
-            let pool = Pool {
-                this: poll_ref.clone(),
-                tasks: Queue::default(),
-                waking_count: RwLock::new(0),
+        let pool = Arc::new_cyclic(|poll_ref| Pool {
+            this: poll_ref.clone(),
+            tasks: Queue::default(),
+            waking_count: RwLock::new(0),
 
-                threads: Mutex::new(ThreadVec::new()),
-                blocked_threads: Mutex::new(HashMap::new()),
-                waking_threads: Queue::default(),
-            };
+            threads: Mutex::new(ThreadVec::new()),
+            blocked_threads: Mutex::new(HashMap::new()),
+            waking_threads: Queue::default(),
+        });
 
-            for _ in 0..thread_ammount {
-                pool.spawn();
-            }
+        for _ in 0..thread_ammount {
+            pool.spawn();
+        }
 
-            pool
-        })
+        pool
     }
 
     pub fn default() -> Arc<Self> {
@@ -115,7 +112,7 @@ impl Pool {
     }
 
     fn spawn(&self) {
-        let self_ref: Arc<Pool> = self.this.clone().upgrade().expect("Cloning ref to self");
+        let self_ref: Arc<Pool> = self.this.upgrade().unwrap();
         let new_thread = thread::spawn(move || child::thread_operation(self_ref));
         match self.threads.lock() {
             Err(_) => unimplemented!("Poisoned lock"),
@@ -164,16 +161,30 @@ impl Pool {
 unsafe impl Sync for Pool {}
 unsafe impl Send for Pool {}
 
-// #[cfg(test)]
-// mod tests {
-//     use super::*;
-//     use rand::Rng;
-//
-//     // Thread tests
-//     #[test]
-//     fn thread_count() {
-//         let thread_ammount: usize = rand::thread_rng().gen::<usize>() % 16 + 1;
-//         let mut pool = Pool::new(thread_ammount);
-//         assert_eq!(pool.threads.len(), thread_ammount);
-//     }
-// }
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rand::Rng;
+
+    // Thread tests
+    #[test]
+    fn thread_count() {
+        let thread_ammount: usize = rand::thread_rng().gen::<usize>() % 16 + 1;
+
+        let pool = Pool::new(thread_ammount);
+        assert_eq!(pool.threads.lock().expect("batata").len(), thread_ammount);
+    }
+
+    #[test]
+    fn access_pool_from_thread() {
+        let pool = Pool::new(1);
+        let equality = pool
+            .map(
+                |p| Arc::<Pool>::ptr_eq(&p, &child::get_thread_pool()),
+                vec![pool.clone()],
+            )
+            .join();
+
+        assert!(equality[0].as_ref().unwrap());
+    }
+}
