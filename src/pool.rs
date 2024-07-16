@@ -15,14 +15,12 @@ use crate::queue::Queue;
 type Task = Box<dyn FnOnce() -> anyhow::Result<()>>;
 type Panic = Box<dyn Any + Send>;
 
-type ThreadVec = Vec<thread::JoinHandle<()>>;
-
 pub struct Pool {
     this: Weak<Pool>,
     tasks: Queue<Task>,
     waking_count: RwLock<usize>,
 
-    threads: Mutex<ThreadVec>,
+    threads: Mutex<HashMap<thread::ThreadId, thread::JoinHandle<()>>>,
     blocked_threads: Mutex<HashMap<thread::ThreadId, Arc<Alarm>>>,
     waking_threads: Queue<Arc<Alarm>>,
 }
@@ -34,7 +32,7 @@ impl Pool {
             tasks: Queue::default(),
             waking_count: RwLock::new(0),
 
-            threads: Mutex::new(ThreadVec::new()),
+            threads: Mutex::new(HashMap::new()),
             blocked_threads: Mutex::new(HashMap::new()),
             waking_threads: Queue::default(),
         });
@@ -76,6 +74,17 @@ impl Pool {
         alarm
     }
 
+    pub(crate) fn thread_to_sleep(&self, alarm: Arc<Alarm>) {
+        let thread_id = thread::current().id();
+        match self.blocked_threads.lock() {
+            Err(_) => unimplemented!("Poisoned lock"),
+            Ok(mut alarms) => {
+                todo!();
+                // alarms.insert();
+            }
+        }
+    }
+
     pub(crate) fn wake_thread(&self, id: &thread::ThreadId) {
         let data = match self.blocked_threads.lock() {
             Err(_) => unimplemented!("Poisoned lock"),
@@ -112,11 +121,15 @@ impl Pool {
     }
 
     fn spawn(&self) {
-        let self_ref: Arc<Pool> = self.this.upgrade().unwrap();
+        let self_ref: Weak<Pool> = self.this.clone();
         let new_thread = thread::spawn(move || child::thread_operation(self_ref));
         match self.threads.lock() {
             Err(_) => unimplemented!("Poisoned lock"),
-            Ok(mut vec) => vec.push(new_thread),
+            Ok(mut map) => {
+                if map.insert(new_thread.thread().id(), new_thread).is_some() {
+                    panic!("New thread had the same id as previous one !")
+                }
+            }
         }
     }
 
@@ -124,7 +137,17 @@ impl Pool {
         let thread_id = thread::current().id();
         match self.threads.lock() {
             Err(_) => unimplemented!("Poisoned lock"),
-            Ok(mut vec) => vec.retain(|handle| handle.thread().id() != thread_id),
+            Ok(mut map) => {
+                map.remove(&thread_id);
+            }
+        }
+    }
+
+    pub(crate) fn within_pool(&self) -> bool {
+        let id_current = thread::current().id();
+        match self.threads.lock() {
+            Err(_) => unimplemented!("Poisoned lock"),
+            Ok(map) => map.contains_key(&id_current),
         }
     }
 
@@ -180,7 +203,7 @@ mod tests {
         let pool = Pool::new(1);
         let equality = pool
             .map(
-                |p| Arc::<Pool>::ptr_eq(&p, &child::get_thread_pool()),
+                |p| Arc::<Pool>::ptr_eq(&p, &child::get_thread_pool().unwrap()),
                 vec![pool.clone()],
             )
             .join();
