@@ -1,7 +1,7 @@
 use std::{
     any::Any,
     cell::RefCell,
-    collections::hash_map::HashMap,
+    collections::{hash_map::HashMap, HashSet},
     panic::{catch_unwind, UnwindSafe},
     sync::{Arc, Mutex, RwLock, Weak},
     thread,
@@ -22,7 +22,7 @@ pub struct Pool {
 
     threads: Mutex<HashMap<thread::ThreadId, thread::JoinHandle<()>>>,
     blocked_threads: Mutex<HashMap<thread::ThreadId, Arc<Alarm>>>,
-    waking_threads: Queue<Arc<Alarm>>,
+    waking_threads: Queue<(Arc<Alarm>, thread::ThreadId)>,
 }
 
 impl Pool {
@@ -60,20 +60,6 @@ impl Pool {
         self.waking_count.read().is_ok_and(|counter| *counter != 0)
     }
 
-    pub(crate) fn get_alarm(&self) -> Arc<Alarm> {
-        let thread_id = thread::current().id();
-        let alarm = Arc::new(Alarm::default());
-
-        match self.blocked_threads.lock() {
-            Err(_) => unimplemented!("Poisoned lock"),
-            Ok(mut alarms) => {
-                alarms.insert(thread_id, alarm.clone());
-            }
-        }
-
-        alarm
-    }
-
     pub(crate) fn thread_to_sleep(&self, alarm: Arc<Alarm>) {
         let thread_id = thread::current().id();
         match self.blocked_threads.lock() {
@@ -82,6 +68,13 @@ impl Pool {
                 todo!();
                 // alarms.insert();
             }
+        }
+    }
+
+    pub(crate) fn thread_asleep(&self, id: &thread::ThreadId) -> bool {
+        match self.blocked_threads.lock() {
+            Err(_) => unimplemented!("Poisoned lock"),
+            Ok(map) => map.contains_key(id),
         }
     }
 
@@ -96,7 +89,7 @@ impl Pool {
                 Err(_) => unimplemented!("Poisoned lock"),
                 Ok(mut counter) => {
                     *counter += 1;
-                    self.waking_threads.push(alarm);
+                    self.waking_threads.push((alarm, *id));
                 }
             }
         }
@@ -112,8 +105,8 @@ impl Pool {
                     false
                 } else {
                     *counter -= 1;
-                    let alarm = self.waking_threads.pop();
-                    alarm.buzz();
+                    let (alarm, id) = self.waking_threads.pop();
+                    alarm.wake(HashSet::from([id]));
                     true
                 }
             }

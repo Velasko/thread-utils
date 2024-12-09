@@ -17,7 +17,7 @@ impl<S> MapJoin<S> {
 
     pub fn join(&self) -> Vec<S> {
         loop {
-            todo!("Change MapJoin to custom in order to not block a pool thread");
+            // todo!("Change MapJoin to custom in order to not block a pool thread");
             match self.map.lock() {
                 Err(_) => panic!("Poison Error! Either thread pool panic or panic::catch_unwind did not catch user's function panic."),
                 Ok(return_map) => {
