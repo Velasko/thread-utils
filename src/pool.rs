@@ -1,14 +1,13 @@
 use std::{
     any::Any,
     cell::RefCell,
-    collections::{hash_map::HashMap, HashSet},
+    collections::hash_map::HashMap,
     panic::{catch_unwind, UnwindSafe},
-    sync::{Arc, Mutex, RwLock, Weak},
+    sync::{Arc, Mutex, Weak},
     thread,
 };
 
 use crate::child;
-use crate::locks::Alarm;
 use crate::mapjoin::MapJoin;
 use crate::queue::Queue;
 
@@ -17,24 +16,20 @@ type Panic = Box<dyn Any + Send>;
 
 pub struct Pool {
     this: Weak<Pool>,
-    tasks: Queue<Task>,
-    waking_count: RwLock<usize>,
-
     threads: Mutex<HashMap<thread::ThreadId, thread::JoinHandle<()>>>,
-    blocked_threads: Mutex<HashMap<thread::ThreadId, Arc<Alarm>>>,
-    waking_threads: Queue<(Arc<Alarm>, thread::ThreadId)>,
+
+    tasks: Queue<Task>,
+    blocked_tasks: Queue<Task>,
 }
 
 impl Pool {
     pub fn new(thread_ammount: usize) -> Arc<Self> {
         let pool = Arc::new_cyclic(|poll_ref| Pool {
             this: poll_ref.clone(),
-            tasks: Queue::default(),
-            waking_count: RwLock::new(0),
-
             threads: Mutex::new(HashMap::new()),
-            blocked_threads: Mutex::new(HashMap::new()),
-            waking_threads: Queue::default(),
+
+            tasks: Queue::default(),
+            blocked_tasks: Queue::default(),
         });
 
         for _ in 0..thread_ammount {
@@ -52,65 +47,8 @@ impl Pool {
         Self::new(core_count)
     }
 
-    pub(crate) fn fetch_task(&self) -> Option<Task> {
-        self.tasks.try_pop()
-    }
-
-    pub(crate) fn any_thread_waking_up(&self) -> bool {
-        self.waking_count.read().is_ok_and(|counter| *counter != 0)
-    }
-
-    pub(crate) fn thread_to_sleep(&self, alarm: Arc<Alarm>) {
-        let thread_id = thread::current().id();
-        match self.blocked_threads.lock() {
-            Err(_) => unimplemented!("Poisoned lock"),
-            Ok(mut alarms) => {
-                todo!();
-                // alarms.insert();
-            }
-        }
-    }
-
-    pub(crate) fn thread_asleep(&self, id: &thread::ThreadId) -> bool {
-        match self.blocked_threads.lock() {
-            Err(_) => unimplemented!("Poisoned lock"),
-            Ok(map) => map.contains_key(id),
-        }
-    }
-
-    pub(crate) fn wake_thread(&self, id: &thread::ThreadId) {
-        let data = match self.blocked_threads.lock() {
-            Err(_) => unimplemented!("Poisoned lock"),
-            Ok(mut map) => map.remove(id),
-        };
-
-        if let Some(alarm) = data {
-            match self.waking_count.write() {
-                Err(_) => unimplemented!("Poisoned lock"),
-                Ok(mut counter) => {
-                    *counter += 1;
-                    self.waking_threads.push((alarm, *id));
-                }
-            }
-        }
-
-        self.tasks.wake_up();
-    }
-
-    pub(crate) fn restart_thread(&self) -> bool {
-        match self.waking_count.write() {
-            Err(_) => unimplemented!("Poisoned lock"),
-            Ok(mut counter) => {
-                if *counter == 0 {
-                    false
-                } else {
-                    *counter -= 1;
-                    let (alarm, id) = self.waking_threads.pop();
-                    alarm.wake(HashSet::from([id]));
-                    true
-                }
-            }
-        }
+    pub(crate) fn fetch_task(&self) -> Task {
+        self.tasks.pop()
     }
 
     fn spawn(&self) {
@@ -122,16 +60,6 @@ impl Pool {
                 if map.insert(new_thread.thread().id(), new_thread).is_some() {
                     panic!("New thread had the same id as previous one !")
                 }
-            }
-        }
-    }
-
-    pub(crate) fn remove_self(&self) {
-        let thread_id = thread::current().id();
-        match self.threads.lock() {
-            Err(_) => unimplemented!("Poisoned lock"),
-            Ok(mut map) => {
-                map.remove(&thread_id);
             }
         }
     }
@@ -202,5 +130,27 @@ mod tests {
             .join();
 
         assert!(equality[0].as_ref().unwrap());
+    }
+
+    #[test]
+    fn simple_math_prob() {
+        let pool = Pool::default();
+
+        let math_func = |x: i32| (x * x + 4) / 33;
+        let values = vec![1, 2, 3, 4, 7, 33];
+
+        let correct = values
+            .iter()
+            .map(|val| math_func(*val))
+            .collect::<Vec<i32>>();
+
+        let threaded_math = pool
+            .map(math_func, values)
+            .join()
+            .iter()
+            .map(|ret| ret.as_ref().expect("trivial testing").clone())
+            .collect::<Vec<_>>();
+
+        assert_eq!(correct, threaded_math);
     }
 }

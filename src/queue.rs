@@ -32,24 +32,28 @@ impl<T> Queue<T> {
         }
     }
 
-    pub fn try_pop(&self) -> Option<T> {
+    pub fn pop(&self) -> T {
         let data = match self.pop_lock.lock() {
             Err(_) => unimplemented!("Poisoned lock"),
-            Ok(pop_guard) => {
-                let queue_size = match self.data.read() {
-                    Err(_) => unimplemented!("Poisoned lock"),
-                    Ok(queue) => (*queue).borrow().len(),
-                };
-
-                if queue_size == 0 {
-                    self.notifier.wait(pop_guard);
+            Ok(mut pop_guard) => {
+                while self
+                    .data
+                    .read()
+                    .map_or(true, |queue| (*queue).borrow().len() == 0)
+                {
+                    pop_guard = match self.notifier.wait(pop_guard) {
+                        Ok(value) => value,
+                        Err(value) => value.into_inner(),
+                    };
                 }
 
                 match self.data.write() {
                     Err(_) => unimplemented!("Poisoned lock"),
                     Ok(mut guard) => {
                         let queue = guard.get_mut();
-                        queue.pop_front()
+                        queue
+                            .pop_front()
+                            .expect("Queue should wait to have something before popping")
                     }
                 }
             }
@@ -57,21 +61,6 @@ impl<T> Queue<T> {
 
         self.notifier.notify_one();
         data
-    }
-
-    pub fn pop(&self) -> T {
-        loop {
-            match self.try_pop() {
-                None => (),
-                Some(value) => {
-                    return value;
-                }
-            }
-        }
-    }
-
-    pub fn wake_up(&self) {
-        self.notifier.notify_one();
     }
 }
 
