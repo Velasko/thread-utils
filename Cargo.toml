@@ -8,5 +8,5 @@ edition = "2021"
 [dependencies]
 anyhow = "1.0.75"
 lazy_static = "1.5.0"
-rand = "0.8.5" # testing
-
+futures = "0.3"
+rand = "0.8.5"        # testing

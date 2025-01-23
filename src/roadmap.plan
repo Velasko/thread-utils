@@ -1,0 +1,9 @@
+generator support
+unblocking map.join()
+bg task / async handling
+custom schedulers
+	which attributes to be based off ?
+
+map fn w/ many arguments
+join multiple awaits
+Ensure lifetimes are OK
