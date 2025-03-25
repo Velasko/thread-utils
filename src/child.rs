@@ -113,7 +113,7 @@ impl ArcWake for Task {
 }
 
 impl Task {
-    pub(crate) fn new(task: Future) -> Self {
+    pub(crate) fn new<O>(task: dyn Future<Output = O>) -> Self {
         Self {
             future: Mutex::new(task),
         }
