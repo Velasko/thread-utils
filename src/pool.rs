@@ -12,18 +12,22 @@ use crate::task::Task;
 
 struct Pool {
     this: Weak<Self>,
+    workers: Vec<thread::JoinHandle<()>>,
     ready_queue: Receiver<Arc<Task>>,
     task_sender: SyncSender<Arc<Task>>,
 }
 
 impl Pool {
-    fn new() -> Self {
+    fn new(thread_ammount: usize) -> Arc<Self> {
         let pool = Arc::new_cyclic(|pool_ref| {
             const MAX_QUEUED_TASKS: usize = 10_000;
             let (task_sender, ready_queue) = sync_channel(MAX_QUEUED_TASKS);
 
             Self {
                 this: pool_ref.clone(),
+                workers: (0..thread_ammount)
+                    .map(|_| thread::spawn(move || {}))
+                    .collect::<Vec<thread::JoinHandle<()>>>(),
                 ready_queue: ready_queue,
                 task_sender: task_sender,
             }
@@ -31,14 +35,19 @@ impl Pool {
 
         pool
     }
+
+    fn default() -> Arc<Self> {
+        let core_count: usize = std::thread::available_parallelism().map_or(1, |num| num.get());
+        Self::new(core_count)
     }
 
-    fn spawn(&self, future: impl Future<Output = ()> + 'static + Send) {
+    fn insert_task(&self, future: impl Future<Output = ()> + 'static + Send) {
         let future = future.boxed();
         let task = Arc::new(Task {
             future: Mutex::new(Some(future)),
             task_sender: self.task_sender.clone(),
         });
+
         self.task_sender
             .try_send(task)
             .expect("too many tasks queued");
@@ -69,24 +78,47 @@ impl Pool {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
 
     async fn my_func() {
         println!("I am here!");
     }
 
-    use super::*;
     #[test]
     fn pool_test() {
-        let pool = Pool::new();
-        pool.spawn(async {
+        let pool = Pool::default();
+        pool.insert_task(async {
             println!("howdy! -- pool");
-            // Wait for our timer future to complete after two seconds.
-            let x = my_func().await;
+            my_func().await;
             println!("done! -- pool");
         });
 
-        pool.spawn(my_func());
+        pool.insert_task(my_func());
 
-        pool.run();
+        let v = Arc::downgrade(&pool);
+
+        let s = v.upgrade();
+
+        s.expect("idk").run();
+    }
+
+    #[test]
+    fn pool_death() {
+        let dropped_pool = {
+            let pool = Pool::default();
+            Arc::downgrade(&pool)
+        };
+
+        assert!(dropped_pool.upgrade().is_none());
+    }
+
+    #[test]
+    fn pool_ref() {
+        let arc_pool = {
+            let pool = Pool::default();
+            Arc::clone(&pool)
+        };
+
+        assert_eq!(Arc::strong_count(&arc_pool), 1);
     }
 }
