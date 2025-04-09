@@ -1,7 +1,7 @@
 use std::{
     future::Future,
     sync::mpsc::{sync_channel, Receiver, SyncSender},
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, Weak},
     task::{Context, Poll, Waker},
     thread,
 };
@@ -11,18 +11,26 @@ use futures::{future::FutureExt, task::waker_ref};
 use crate::task::Task;
 
 struct Pool {
+    this: Weak<Self>,
     ready_queue: Receiver<Arc<Task>>,
     task_sender: SyncSender<Arc<Task>>,
 }
 
 impl Pool {
     fn new() -> Self {
-        const MAX_QUEUED_TASKS: usize = 10_000;
-        let (task_sender, ready_queue) = sync_channel(MAX_QUEUED_TASKS);
-        Self {
-            ready_queue: ready_queue,
-            task_sender: task_sender,
-        }
+        let pool = Arc::new_cyclic(|pool_ref| {
+            const MAX_QUEUED_TASKS: usize = 10_000;
+            let (task_sender, ready_queue) = sync_channel(MAX_QUEUED_TASKS);
+
+            Self {
+                this: pool_ref.clone(),
+                ready_queue: ready_queue,
+                task_sender: task_sender,
+            }
+        });
+
+        pool
+    }
     }
 
     fn spawn(&self, future: impl Future<Output = ()> + 'static + Send) {
