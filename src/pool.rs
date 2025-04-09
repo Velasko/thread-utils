@@ -10,23 +10,22 @@ use futures::{future::FutureExt, task::waker_ref};
 
 use crate::task::Task;
 
-pub fn new_executor_and_spawner() -> (Executor, Spawner) {
-    // Maximum number of tasks to allow queueing in the channel at once.
-    // This is just to make `sync_channel` happy, and wouldn't be present in
-    // a real executor.
-    const MAX_QUEUED_TASKS: usize = 10_000;
-    let (task_sender, ready_queue) = sync_channel(MAX_QUEUED_TASKS);
-    (Executor { ready_queue }, Spawner { task_sender })
+struct Pool {
+    ready_queue: Receiver<Arc<Task>>,
+    task_sender: SyncSender<Arc<Task>>,
 }
 
-/// `Spawner` spawns new futures onto the task channel.
-#[derive(Clone)]
-pub struct Spawner {
-    pub task_sender: SyncSender<Arc<Task>>,
-}
+impl Pool {
+    fn new() -> Self {
+        const MAX_QUEUED_TASKS: usize = 10_000;
+        let (task_sender, ready_queue) = sync_channel(MAX_QUEUED_TASKS);
+        Self {
+            ready_queue: ready_queue,
+            task_sender: task_sender,
+        }
+    }
 
-impl Spawner {
-    pub fn spawn(&self, future: impl Future<Output = ()> + 'static + Send) {
+    fn spawn(&self, future: impl Future<Output = ()> + 'static + Send) {
         let future = future.boxed();
         let task = Arc::new(Task {
             future: Mutex::new(Some(future)),
@@ -36,14 +35,7 @@ impl Spawner {
             .try_send(task)
             .expect("too many tasks queued");
     }
-}
 
-/// Task executor that receives tasks off of a channel and runs them.
-pub struct Executor {
-    pub ready_queue: Receiver<Arc<Task>>,
-}
-
-impl Executor {
     pub fn run(&self) {
         while let Ok(task) = self.ready_queue.recv() {
             // Take the future, and if it has not yet completed (is still Some),
@@ -70,31 +62,23 @@ impl Executor {
 #[cfg(test)]
 mod tests {
 
-    async fn my_func() -> i64 {
+    async fn my_func() {
         println!("I am here!");
-        3
     }
 
     use super::*;
     #[test]
-    fn main_test() {
-        let (executor, spawner) = new_executor_and_spawner();
-
-        // Spawn a task to print before and after waiting on a timer.
-        spawner.spawn(async {
-            println!("howdy!");
+    fn pool_test() {
+        let pool = Pool::new();
+        pool.spawn(async {
+            println!("howdy! -- pool");
             // Wait for our timer future to complete after two seconds.
             let x = my_func().await;
-            println!("done!");
-            print!("result: {x}");
+            println!("done! -- pool");
         });
 
-        // Drop the spawner so that our executor knows it is finished and won't
-        // receive more incoming tasks to run.
-        drop(spawner);
+        pool.spawn(my_func());
 
-        // Run the executor until the task queue is empty.
-        // This will print "howdy!", pause, and then print "done!".
-        executor.run();
+        pool.run();
     }
 }
