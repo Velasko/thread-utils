@@ -59,26 +59,8 @@ impl Pool {
         self.queue.pop()
     }
 
-    pub fn run(&self) {
-        while let task = self.queue.pop() {
-            // Take the future, and if it has not yet completed (is still Some),
-            // poll it in an attempt to complete it.
-            let mut future_slot = task.future.lock().unwrap();
-            if let Some(mut future) = future_slot.take() {
-                // Create a `LocalWaker` from the task itself
-                let waker = waker_ref(&task);
-                let context = &mut Context::from_waker(&waker);
-                // `BoxFuture<T>` is a type alias for
-                // `Pin<Box<dyn Future<Output = T> + Send + 'static>>`.
-                // We can get a `Pin<&mut dyn Future + Send + 'static>`
-                // from it by calling the `Pin::as_mut` method.
-                if future.as_mut().poll(context).is_pending() {
-                    // We're not done processing the future, so put it
-                    // back in its task to be run again in the future.
-                    *future_slot = Some(future);
-                }
-            }
-        }
+    pub(crate) fn clone_queue(&self) -> Arc<Queue<Arc<Task>>> {
+        self.queue.clone()
     }
 }
 
@@ -86,7 +68,22 @@ impl Pool {
 mod tests {
     use super::*;
 
-    use std::{mem, thread::JoinHandle, time::Duration};
+    use async_recursion::async_recursion;
+    use std::{env::var, mem, thread::JoinHandle, time::Duration};
+
+    // Function to emulate a constant flow of tasks
+    #[async_recursion]
+    async fn self_inserter(queue: Arc<Queue<Arc<Task>>>) {
+        // println!("I am running on {:?}", thread::current().id());
+        let func = self_inserter(queue.clone());
+        let future = func.boxed();
+        let task = Arc::new(Task {
+            future: Mutex::new(Some(future)),
+            task_sender: queue.clone(),
+        });
+
+        queue.push(task);
+    }
 
     #[test]
     fn pool_death() {
@@ -94,16 +91,19 @@ mod tests {
             let pool = Pool::new(4);
             let workers = Arc::clone(&pool.workers);
 
-            thread::sleep(Duration::from_millis(1000));
+            thread::sleep(Duration::from_millis(10));
             assert!(
                 !workers.iter().any(|th| th.is_finished()),
                 "There are dead threads from the get-go"
             );
 
+            let self_inserting_future = self_inserter(pool.clone_queue());
+            pool.insert_task(self_inserting_future);
+
             (Arc::downgrade(&pool), workers)
         };
 
-        thread::sleep(Duration::from_millis(10000));
+        thread::sleep(Duration::from_millis(10));
 
         assert!(
             dropped_pool.upgrade().is_none(),
@@ -114,6 +114,24 @@ mod tests {
             "Some threads are still alive"
         );
     }
+
+    #[test]
+    fn child_executing_task() {
+        let workers = {
+            let pool = Pool::new(2);
+
+            let self_inserting_future = self_inserter(pool.clone_queue());
+            pool.insert_task(self_inserting_future);
+
+            thread::sleep(Duration::from_millis(1));
+            pool.workers.clone()
+        };
+
+        while !workers.iter().all(|th| th.is_finished()) {}
+    }
+
+    // #[test]
+    fn child_pool_access() {}
 
     #[test]
     fn pool_ref() {

@@ -9,4 +9,8 @@ edition = "2021"
 anyhow = "1.0.75"
 lazy_static = "1.5.0"
 futures = "0.3"
-rand = "0.8.5"        # testing
+
+
+[dev-dependencies]
+async-recursion = "1.1.1" # testing
+rand = "0.8.5"            # testing
