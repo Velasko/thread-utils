@@ -79,28 +79,6 @@ mod tests {
 
     use std::{mem, thread::JoinHandle, time::Duration};
 
-    async fn my_func() {
-        println!("I am here!");
-    }
-
-    // #[test]
-    // fn pool_test() {
-    //     let pool = Pool::default();
-    //     pool.insert_task(async {
-    //         println!("howdy! -- pool");
-    //         my_func().await;
-    //         println!("done! -- pool");
-    //     });
-    //
-    //     pool.insert_task(my_func());
-    //
-    //     let v = Arc::downgrade(&pool);
-    //
-    //     let s = v.upgrade();
-    //
-    //     s.expect("idk").run();
-    // }
-
     #[test]
     fn pool_death() {
         let (dropped_pool, threads) = {
