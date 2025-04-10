@@ -91,7 +91,7 @@ mod tests {
     #[test]
     fn pool_death() {
         let (dropped_pool, workers) = {
-            let pool = Pool::default();
+            let pool = Pool::new(4);
             let workers = Arc::clone(&pool.workers);
 
             assert!(
@@ -117,7 +117,7 @@ mod tests {
     #[test]
     fn pool_ref() {
         let arc_pool = {
-            let pool = Pool::default();
+            let pool = Pool::new(0);
             Arc::clone(&pool)
         };
 
