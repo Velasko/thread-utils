@@ -46,6 +46,10 @@ impl Pool {
         self.queue.push(task);
     }
 
+    pub(crate) fn fetch_task(&self) -> Arc<Task> {
+        self.queue.pop()
+    }
+
     pub fn run(&self) {
         while let task = self.queue.pop() {
             // Take the future, and if it has not yet completed (is still Some),
