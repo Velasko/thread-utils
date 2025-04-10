@@ -81,9 +81,16 @@ mod tests {
 
     #[test]
     fn pool_death() {
-        let (dropped_pool, threads) = {
+        let (dropped_pool, workers) = {
             let pool = Pool::default();
-            (Arc::downgrade(&pool), Arc::clone(&pool.workers))
+            let workers = Arc::clone(&pool.workers);
+
+            assert!(
+                workers.iter().any(|th| th.is_finished()),
+                "There are dead threads from the get-go"
+            );
+
+            (Arc::downgrade(&pool), workers)
         };
 
         thread::sleep(Duration::from_millis(100));
@@ -93,7 +100,7 @@ mod tests {
             "Pool reference isn't weak"
         );
         assert!(
-            threads.iter().all(|th| th.is_finished()),
+            workers.iter().all(|th| th.is_finished()),
             "Some threads are still alive"
         );
     }
