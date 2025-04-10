@@ -26,10 +26,12 @@ pub fn get_thread_pool() -> Option<Arc<Pool>> {
 pub fn thread_operation(pool: Weak<Pool>) {
     POOL.set(Some(pool.clone()));
 
-    while let Some(_p) = pool.upgrade() {
-        // let task = p.fetch_task();
-        thread::sleep(Duration::from_millis(100));
-    while let None = pool.upgrade() {}
+    while let None = pool.upgrade() {} // todo!("Improve the thread waiting for the pool to fully
+                                       // initialize")
 
+    while let Some(p) = pool.upgrade() {
+        let task = p.fetch_task(); // sleep here makes the pool to never be dropped. Maybe copy the
+                                   // Q ?
+        thread::sleep(Duration::from_millis(0));
     }
 }

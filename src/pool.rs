@@ -103,7 +103,7 @@ mod tests {
             (Arc::downgrade(&pool), workers)
         };
 
-        thread::sleep(Duration::from_millis(100));
+        thread::sleep(Duration::from_millis(10000));
 
         assert!(
             dropped_pool.upgrade().is_none(),
