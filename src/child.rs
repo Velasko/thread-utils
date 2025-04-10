@@ -15,15 +15,16 @@ use std::{
 use crate::pool::Pool;
 
 thread_local! {
-    static POOL: RefCell<Weak<Pool>> = RefCell::new(Arc::downgrade(&Pool::new(0)));
+    static POOL: RefCell<Option<Weak<Pool>>> = RefCell::new(None);
 }
 
 pub fn get_thread_pool() -> Option<Arc<Pool>> {
-    POOL.with_borrow(|pool| pool.upgrade())
+    POOL.with_borrow(|opt| opt.clone().map(|pool| pool.upgrade()))
+        .flatten()
 }
 
 pub fn thread_operation(pool: Weak<Pool>) {
-    POOL.set(pool.clone());
+    POOL.set(Some(pool.clone()));
 
     while let Some(_p) = pool.upgrade() {
         // let task = p.fetch_task();
