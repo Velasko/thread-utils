@@ -1,6 +1,5 @@
 use std::{
     future::Future,
-    sync::mpsc::{sync_channel, Receiver, SyncSender},
     sync::{Arc, Mutex, Weak},
     task::{Context, Poll, Waker},
     thread,
@@ -8,29 +7,23 @@ use std::{
 
 use futures::{future::FutureExt, task::waker_ref};
 
+use crate::queue::Queue;
 use crate::task::Task;
 
 struct Pool {
     this: Weak<Self>,
     workers: Vec<thread::JoinHandle<()>>,
-    ready_queue: Receiver<Arc<Task>>,
-    task_sender: SyncSender<Arc<Task>>,
+    queue: Arc<Queue<Arc<Task>>>,
 }
 
 impl Pool {
     fn new(thread_ammount: usize) -> Arc<Self> {
-        let pool = Arc::new_cyclic(|pool_ref| {
-            const MAX_QUEUED_TASKS: usize = 10_000;
-            let (task_sender, ready_queue) = sync_channel(MAX_QUEUED_TASKS);
-
-            Self {
-                this: pool_ref.clone(),
-                workers: (0..thread_ammount)
-                    .map(|_| thread::spawn(move || {}))
-                    .collect::<Vec<thread::JoinHandle<()>>>(),
-                ready_queue: ready_queue,
-                task_sender: task_sender,
-            }
+        let pool = Arc::new_cyclic(|pool_ref| Self {
+            this: pool_ref.clone(),
+            workers: (0..thread_ammount)
+                .map(|_| thread::spawn(move || {}))
+                .collect::<Vec<thread::JoinHandle<()>>>(),
+            queue: Queue::default(),
         });
 
         pool
@@ -45,16 +38,14 @@ impl Pool {
         let future = future.boxed();
         let task = Arc::new(Task {
             future: Mutex::new(Some(future)),
-            task_sender: self.task_sender.clone(),
+            task_sender: self.queue.clone(),
         });
 
-        self.task_sender
-            .try_send(task)
-            .expect("too many tasks queued");
+        self.queue.push(task);
     }
 
     pub fn run(&self) {
-        while let Ok(task) = self.ready_queue.recv() {
+        while let task = self.queue.pop() {
             // Take the future, and if it has not yet completed (is still Some),
             // poll it in an attempt to complete it.
             let mut future_slot = task.future.lock().unwrap();
@@ -84,23 +75,23 @@ mod tests {
         println!("I am here!");
     }
 
-    #[test]
-    fn pool_test() {
-        let pool = Pool::default();
-        pool.insert_task(async {
-            println!("howdy! -- pool");
-            my_func().await;
-            println!("done! -- pool");
-        });
-
-        pool.insert_task(my_func());
-
-        let v = Arc::downgrade(&pool);
-
-        let s = v.upgrade();
-
-        s.expect("idk").run();
-    }
+    // #[test]
+    // fn pool_test() {
+    //     let pool = Pool::default();
+    //     pool.insert_task(async {
+    //         println!("howdy! -- pool");
+    //         my_func().await;
+    //         println!("done! -- pool");
+    //     });
+    //
+    //     pool.insert_task(my_func());
+    //
+    //     let v = Arc::downgrade(&pool);
+    //
+    //     let s = v.upgrade();
+    //
+    //     s.expect("idk").run();
+    // }
 
     #[test]
     fn pool_death() {

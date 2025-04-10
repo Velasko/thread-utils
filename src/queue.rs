@@ -11,7 +11,7 @@ pub struct Queue<T> {
 }
 
 impl<T> Queue<T> {
-    fn default() -> Arc<Self> {
+    pub fn default() -> Arc<Self> {
         Arc::new(Self {
             data: RwLock::new(RefCell::new(VecDeque::new())),
             notifier: Condvar::new(),

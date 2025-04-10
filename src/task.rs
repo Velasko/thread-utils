@@ -1,9 +1,7 @@
-use std::{
-    sync::mpsc::SyncSender,
-    sync::{Arc, Mutex},
-};
-
 use futures::{future::BoxFuture, task::ArcWake};
+use std::sync::{Arc, Mutex};
+
+use crate::queue::Queue;
 
 /// A future that can reschedule itself to be polled by an `Executor`.
 pub struct Task {
@@ -17,7 +15,7 @@ pub struct Task {
     pub future: Mutex<Option<BoxFuture<'static, ()>>>,
 
     /// Handle to place the task itself back onto the task queue.
-    pub task_sender: SyncSender<Arc<Task>>,
+    pub task_sender: Arc<Queue<Arc<Task>>>,
 }
 
 impl ArcWake for Task {
@@ -25,9 +23,6 @@ impl ArcWake for Task {
         // Implement `wake` by sending this task back onto the task channel
         // so that it will be polled again by the executor.
         let cloned = arc_self.clone();
-        arc_self
-            .task_sender
-            .try_send(cloned)
-            .expect("too many tasks queued");
+        arc_self.task_sender.push(cloned);
     }
 }
