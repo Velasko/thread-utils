@@ -7,6 +7,7 @@ use std::{
 
 use futures::{future::FutureExt, task::waker_ref};
 
+use crate::child;
 use crate::queue::Queue;
 use crate::task::Task;
 
@@ -18,22 +19,30 @@ pub struct Pool {
 
 impl Pool {
     pub fn new(thread_ammount: usize) -> Arc<Self> {
-        let pool = Arc::new_cyclic(|pool_ref| Self {
-            this: pool_ref.clone(),
-            workers: Arc::new(
-                (0..thread_ammount)
-                    .map(|_| thread::spawn(move || {}))
-                    .collect::<Vec<thread::JoinHandle<()>>>(),
-            ),
-            queue: Queue::default(),
-        });
+        Arc::new_cyclic(|pool_ref| {
+            let mut pool = Self {
+                this: pool_ref.clone(),
+                workers: Arc::new(vec![]),
+                queue: Queue::default(),
+            };
 
-        pool
+            for _ in 0..thread_ammount {
+                pool.spawn_child();
+            }
+
+            pool
+        })
     }
 
     pub fn default() -> Arc<Self> {
         let core_count: usize = std::thread::available_parallelism().map_or(1, |num| num.get());
         Self::new(core_count)
+    }
+
+    fn spawn_child(&mut self) {
+        let self_ref: Weak<Pool> = self.this.clone();
+        let new_thread = thread::spawn(move || child::thread_operation(self_ref));
+        Arc::get_mut(&mut self.workers).unwrap().push(new_thread);
     }
 
     pub fn insert_task(&self, future: impl Future<Output = ()> + 'static + Send) {
