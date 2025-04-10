@@ -10,14 +10,14 @@ use futures::{future::FutureExt, task::waker_ref};
 use crate::queue::Queue;
 use crate::task::Task;
 
-struct Pool {
+pub struct Pool {
     this: Weak<Self>,
     workers: Vec<thread::JoinHandle<()>>,
     queue: Arc<Queue<Arc<Task>>>,
 }
 
 impl Pool {
-    fn new(thread_ammount: usize) -> Arc<Self> {
+    pub fn new(thread_ammount: usize) -> Arc<Self> {
         let pool = Arc::new_cyclic(|pool_ref| Self {
             this: pool_ref.clone(),
             workers: (0..thread_ammount)
@@ -29,12 +29,12 @@ impl Pool {
         pool
     }
 
-    fn default() -> Arc<Self> {
+    pub fn default() -> Arc<Self> {
         let core_count: usize = std::thread::available_parallelism().map_or(1, |num| num.get());
         Self::new(core_count)
     }
 
-    fn insert_task(&self, future: impl Future<Output = ()> + 'static + Send) {
+    pub fn insert_task(&self, future: impl Future<Output = ()> + 'static + Send) {
         let future = future.boxed();
         let task = Arc::new(Task {
             future: Mutex::new(Some(future)),
