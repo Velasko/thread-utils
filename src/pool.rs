@@ -12,7 +12,7 @@ use crate::task::Task;
 
 pub struct Pool {
     this: Weak<Self>,
-    workers: Vec<thread::JoinHandle<()>>,
+    workers: Arc<Vec<thread::JoinHandle<()>>>,
     queue: Arc<Queue<Arc<Task>>>,
 }
 
@@ -20,9 +20,11 @@ impl Pool {
     pub fn new(thread_ammount: usize) -> Arc<Self> {
         let pool = Arc::new_cyclic(|pool_ref| Self {
             this: pool_ref.clone(),
-            workers: (0..thread_ammount)
-                .map(|_| thread::spawn(move || {}))
-                .collect::<Vec<thread::JoinHandle<()>>>(),
+            workers: Arc::new(
+                (0..thread_ammount)
+                    .map(|_| thread::spawn(move || {}))
+                    .collect::<Vec<thread::JoinHandle<()>>>(),
+            ),
             queue: Queue::default(),
         });
 
@@ -71,6 +73,8 @@ impl Pool {
 mod tests {
     use super::*;
 
+    use std::{mem, thread::JoinHandle, time::Duration};
+
     async fn my_func() {
         println!("I am here!");
     }
@@ -95,12 +99,21 @@ mod tests {
 
     #[test]
     fn pool_death() {
-        let dropped_pool = {
+        let (dropped_pool, threads) = {
             let pool = Pool::default();
-            Arc::downgrade(&pool)
+            (Arc::downgrade(&pool), Arc::clone(&pool.workers))
         };
 
-        assert!(dropped_pool.upgrade().is_none());
+        thread::sleep(Duration::from_millis(100));
+
+        assert!(
+            dropped_pool.upgrade().is_none(),
+            "Pool reference isn't weak"
+        );
+        assert!(
+            threads.iter().all(|th| th.is_finished()),
+            "Some threads are still alive"
+        );
     }
 
     #[test]
