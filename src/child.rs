@@ -29,5 +29,7 @@ pub fn thread_operation(pool: Weak<Pool>) {
     while let Some(_p) = pool.upgrade() {
         // let task = p.fetch_task();
         thread::sleep(Duration::from_millis(100));
+    while let None = pool.upgrade() {}
+
     }
 }

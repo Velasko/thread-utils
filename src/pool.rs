@@ -94,8 +94,9 @@ mod tests {
             let pool = Pool::new(4);
             let workers = Arc::clone(&pool.workers);
 
+            thread::sleep(Duration::from_millis(1000));
             assert!(
-                workers.iter().any(|th| th.is_finished()),
+                !workers.iter().any(|th| th.is_finished()),
                 "There are dead threads from the get-go"
             );
 
