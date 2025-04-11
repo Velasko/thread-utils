@@ -1,5 +1,6 @@
 use std::{
     future::Future,
+    panic::UnwindSafe,
     sync::{Arc, Mutex, Weak},
     task::{Context, Poll, Waker},
     thread,
@@ -57,6 +58,32 @@ impl Pool {
 
     pub(crate) fn clone_queue(&self) -> Arc<Queue<Arc<Task>>> {
         self.queue.clone()
+    }
+
+    pub async fn map<T, C, S>(&self, func: fn(T) -> C, args: Vec<T>) -> C
+    where
+        T: 'static + UnwindSafe,
+        C: Future<Output = S> + 'static + Send,
+        S: 'static,
+    {
+        todo!();
+    }
+
+    pub fn idle_wait<T, C, S>(&self, func: fn(T) -> C, args: Vec<T>)
+    where
+        T: 'static + UnwindSafe,
+        C: Future<Output = S> + 'static + Send,
+        S: 'static,
+    {
+        // parse a coroutine
+        // returns a join handle. Will wake once the task is finished
+        todo!();
+    }
+
+    pub fn join_pool_until(&self, future: impl Future<Output = ()> + 'static + Send) {
+        // Uses the current thread as part of the pool.
+        // Once the future is completed, return its value
+        todo!();
     }
 }
 
