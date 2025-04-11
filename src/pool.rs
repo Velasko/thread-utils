@@ -69,7 +69,13 @@ mod tests {
     use super::*;
 
     use async_recursion::async_recursion;
+    use async_std;
+    use futures::future;
     use std::{env::var, mem, thread::JoinHandle, time::Duration};
+
+    async fn aux() {
+        async_std::task::sleep(Duration::from_millis(1000)).await;
+    }
 
     // Function to emulate a constant flow of tasks
     #[async_recursion]
@@ -118,20 +124,32 @@ mod tests {
     #[test]
     fn child_executing_task() {
         let workers = {
-            let pool = Pool::new(2);
+            let pool = Pool::new(4);
 
             let self_inserting_future = self_inserter(pool.clone_queue());
             pool.insert_task(self_inserting_future);
 
-            thread::sleep(Duration::from_millis(1));
+            thread::sleep(Duration::from_millis(1000));
             pool.workers.clone()
         };
 
         while !workers.iter().all(|th| th.is_finished()) {}
     }
 
-    // #[test]
-    fn child_pool_access() {}
+    async fn testing_pool_access(global: Arc<Pool>) {
+        assert!(child::get_thread_pool()
+            .is_some_and(|local| Arc::as_ptr(&local) == Arc::as_ptr(&global)));
+    }
+
+    #[test]
+    fn child_pool_access() {
+        // Checks if child can access the pool
+        let pool = Pool::new(1);
+
+        let test = testing_pool_access(pool.clone());
+        pool.insert_task(test);
+        thread::sleep(Duration::from_millis(100));
+    }
 
     #[test]
     fn pool_ref() {
