@@ -12,5 +12,5 @@ futures = "0.3"
 
 
 [dev-dependencies]
-async-recursion = "1.1.1" # testing
-rand = "0.8.5"            # testing
+async-recursion = "1.1.1"
+async-std = "1.13.1"

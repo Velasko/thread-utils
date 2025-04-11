@@ -1,13 +1,8 @@
 use std::{
-    borrow::Borrow,
     cell::RefCell,
     future::Future,
-    pin::Pin,
-    sync::{
-        mpsc::{sync_channel, Receiver, SyncSender},
-        Arc, Mutex, Weak,
-    },
-    task::{Context, Poll, Waker},
+    sync::{Arc, Mutex, Weak},
+    task::Context,
     thread,
     time::Duration,
 };
