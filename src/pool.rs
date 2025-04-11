@@ -174,6 +174,23 @@ mod tests {
         thread::sleep(Duration::from_millis(100));
     }
 
+    async fn square(a: i32) -> i32 {
+        println!("in async");
+        a * a
+    }
+
+    fn sync_square(a: i32) -> i32 {
+        println!("in sync");
+        a * a
+    }
+
+    #[test]
+    fn async_on_map() {
+        let pool = Pool::new(1);
+        // pool.map(square, vec![2, 3]);
+        // pool.map(sync_square, vec![2, 3]);
+    }
+
     #[test]
     fn pool_ref() {
         let arc_pool = {
