@@ -55,10 +55,6 @@ impl Pool {
         self.queue.push(task);
     }
 
-    pub(crate) fn fetch_task(&self) -> Arc<Task> {
-        self.queue.pop()
-    }
-
     pub(crate) fn clone_queue(&self) -> Arc<Queue<Arc<Task>>> {
         self.queue.clone()
     }
