@@ -12,6 +12,12 @@ use crate::child;
 use crate::queue::Queue;
 use crate::task::Task;
 
+macro_rules! AsyncFn {
+     () => {
+         impl Future<Output = ()> + 'static + Send
+     };
+ }
+
 pub struct Pool {
     this: Weak<Self>,
     workers: Arc<Vec<thread::JoinHandle<()>>>,
@@ -46,7 +52,7 @@ impl Pool {
         Arc::get_mut(&mut self.workers).unwrap().push(new_thread);
     }
 
-    pub fn insert_task(&self, future: impl Future<Output = ()> + 'static + Send) {
+    pub fn insert_task(&self, future: AsyncFn!()) {
         let future = future.boxed();
         let task = Arc::new(Task {
             future: Mutex::new(Some(future)),
@@ -80,7 +86,7 @@ impl Pool {
         todo!();
     }
 
-    pub fn join_pool_until(&self, future: impl Future<Output = ()> + 'static + Send) {
+    pub fn join_pool_until(&self, future: AsyncFn!()) {
         // Uses the current thread as part of the pool.
         // Once the future is completed, return its value
         todo!();
