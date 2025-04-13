@@ -69,20 +69,21 @@ impl Pool {
         self.queue.clone()
     }
 
-    pub async fn map<T, C, S>(&self, func: fn(T) -> C, args: Vec<T>) -> Vec<S>
+    pub async fn map<'t, 'c, 's, T, C, S>(&self, func: fn(T) -> C, args: Vec<T>) -> Vec<S>
     where
-        T: 'static + UnwindSafe,
-        C: Future<Output = S> + 'static + Send,
-        S: 'static,
+        T: 't + UnwindSafe,
+        C: Future<Output = S> + 'c + Send,
+        S: 's,
     {
+        // Wrap on join_all
         join_all(args.into_iter().map(|args| func(args)).collect::<Vec<C>>()).await
     }
 
-    pub fn idle_wait<T, C, S>(&self, func: fn(T) -> C, args: Vec<T>)
+    pub fn idle_wait<'t, 'c, 's, T, C, S>(&self, func: fn(T) -> C, args: Vec<T>)
     where
-        T: 'static + UnwindSafe,
-        C: Future<Output = S> + 'static + Send,
-        S: 'static,
+        T: 't + UnwindSafe,
+        C: Future<Output = S> + 'c + Send,
+        S: 's,
     {
         // parse a coroutine
         // returns a join handle. Will wake once the task is finished
