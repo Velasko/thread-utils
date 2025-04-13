@@ -6,7 +6,10 @@ use std::{
     thread,
 };
 
-use futures::{future::FutureExt, task::waker_ref};
+use futures::{
+    future::{join_all, FutureExt},
+    task::waker_ref,
+};
 
 use crate::child;
 use crate::queue::Queue;
@@ -66,13 +69,13 @@ impl Pool {
         self.queue.clone()
     }
 
-    pub async fn map<T, C, S>(&self, func: fn(T) -> C, args: Vec<T>) -> C
+    pub async fn map<T, C, S>(&self, func: fn(T) -> C, args: Vec<T>) -> Vec<S>
     where
         T: 'static + UnwindSafe,
         C: Future<Output = S> + 'static + Send,
         S: 'static,
     {
-        todo!();
+        join_all(args.into_iter().map(|args| func(args)).collect::<Vec<C>>()).await
     }
 
     pub fn idle_wait<T, C, S>(&self, func: fn(T) -> C, args: Vec<T>)
