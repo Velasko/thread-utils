@@ -35,7 +35,7 @@ impl<T> Queue<T> {
             Err(_) => unimplemented!("Queue poisoned lock"),
             Ok(mut pop_guard) => {
                 // While empty, wait.
-                // Notifier may randomly awake the thread.
+                // Notifier may randomly awake the thread, making this check needed.
                 while self
                     .data
                     .read()
@@ -47,7 +47,10 @@ impl<T> Queue<T> {
                         .unwrap_or_else(|err| err.into_inner());
                 }
 
-                // Can exit the while without issues because no other writer will be popping
+                // Can exit the while without issues because no other writer will be popping.
+                // Meaning it is centain to have at least 1 value in the Queue
+                // * pop_guard still active, blocking other workers.
+                //  (I think... I hope the variable isn't returned while in this scope)
 
                 match self.data.write() {
                     Err(_) => unimplemented!("Queue poisoned lock"),
