@@ -24,7 +24,7 @@ proptest = "1.6.0"
 [profile.release]
 
 [lints.rust]
-unsafe_code = "forbid"
+# unsafe_code = "forbid"
 
 # come at me, clippy
 [lints.clippy]
