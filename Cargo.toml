@@ -1,6 +1,6 @@
 [package]
-name = "threading_utils"
-version = "0.1.0"
+name = "thread_utils"
+version = "0.2.0"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -11,7 +11,24 @@ lazy_static = "1.5.0"
 futures = "0.3"
 tuples = "1.16.0"
 
+[build-dependencies]
 
 [dev-dependencies]
 async-recursion = "1.1.1"
 async-std = "1.13.1"
+proptest = "1.6.0"
+
+# Check: https://doc.rust-lang.org/cargo/reference/profiles.html#default-profiles
+[profile.dev]
+
+[profile.release]
+
+[lints.rust]
+unsafe_code = "forbid"
+
+# come at me, clippy
+[lints.clippy]
+enum_glob_use = "deny"
+pedantic = { level = "deny", priority = -1 }
+nursery = { level = "deny", priority = -1 }
+unwrap_used = "deny"
