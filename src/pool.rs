@@ -11,6 +11,8 @@ use futures::{
     task::waker_ref,
 };
 
+use tuples::*;
+
 use crate::child;
 use crate::queue::Queue;
 use crate::task::Task;
@@ -69,14 +71,22 @@ impl Pool {
         self.queue.clone()
     }
 
-    pub async fn map<'t, 'c, 's, T, C, S>(&self, func: fn(T) -> C, args: Vec<T>) -> Vec<S>
+    pub async fn map<'t, 'fun, 'fut, 's, T, Fun, Fut, S>(
+        &self,
+        func: Fun,
+        args: Vec<T>,
+    ) -> impl Future<Output = Vec<S>>
     where
-        T: 't + UnwindSafe,
-        C: Future<Output = S> + 'c + Send,
+        T: 't,
+        Fun: ApplyTuple<T, Output = Fut> + 'fun,
+        Fut: Future<Output = S> + 'fut,
         S: 's,
     {
-        // Wrap on join_all
-        join_all(args.into_iter().map(|args| func(args)).collect::<Vec<C>>()).await
+        join_all(
+            args.into_iter()
+                .map(|args| func.apply_tuple(args))
+                .collect::<Vec<Fut>>(),
+        )
     }
 
     pub fn idle_wait<'t, 'c, 's, T, C, S>(&self, func: fn(T) -> C, args: Vec<T>)
