@@ -57,14 +57,18 @@ impl Pool {
         Arc::get_mut(&mut self.workers).unwrap().push(new_thread);
     }
 
-    pub fn insert_task<F, R>(&self, future: F)
+    pub fn insert_task<F, R: 'static>(&self, future: F) -> Arc<Queue<R>>
     where
         F: Future<Output = R> + Send + 'static,
     {
-        let wrapped = async move || {
-            future.await;
+        let queue: Arc<Queue<R>> = Queue::new();
+        let t_queue = queue.clone();
+        let wrapper = async move || {
+            let ret_var = future.await;
+            t_queue.push(ret_var);
         };
-        self._insert_task(wrapped());
+        self._insert_task(wrapper());
+        queue
     }
 
     fn _insert_task<F>(&self, future: F)
