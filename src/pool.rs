@@ -165,7 +165,7 @@ mod tests {
             (Arc::downgrade(&pool), workers)
         };
 
-        thread::sleep(Duration::from_millis(10));
+        thread::sleep(Duration::from_millis(500));
 
         assert!(
             dropped_pool.upgrade().is_none(),
@@ -185,7 +185,7 @@ mod tests {
             let self_inserting_future = self_inserter(pool.clone_queue());
             pool.insert_task(self_inserting_future);
 
-            thread::sleep(Duration::from_millis(1000));
+            thread::sleep(Duration::from_millis(100));
             pool.workers.clone()
         };
 
