@@ -10,7 +10,7 @@ pub struct Queue<T> {
     pop_lock: Mutex<()>,
 }
 
-impl<T> Queue<T> {
+impl<'a, T> Queue<T> {
     pub fn new() -> Arc<Self> {
         Arc::new(Self {
             data: RwLock::new(RefCell::new(VecDeque::new())),
@@ -28,6 +28,17 @@ impl<T> Queue<T> {
                 self.notifier.notify_one();
             }
         }
+    }
+
+    pub(crate) fn try_pop(&self) -> Option<T> {
+        // Error handling is a pain.
+        // Could've been Mutex or RwLock errors and guard could be poisoned.
+        self.pop_lock.try_lock().map_or(None, |pop_guard| {
+            self.data.try_write().map_or(None, |mut guard| {
+                let queue = guard.get_mut();
+                queue.pop_front()
+            })
+        })
     }
 
     pub fn pop(&self) -> T {
