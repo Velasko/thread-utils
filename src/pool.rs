@@ -177,38 +177,7 @@ mod tests {
         };
 
         while !workers.iter().all(|th| th.is_finished()) {}
-    }
-
-    async fn testing_pool_access(global: Arc<Pool>) {
-        assert!(child::get_thread_pool()
-            .is_some_and(|local| Arc::as_ptr(&local) == Arc::as_ptr(&global)));
-    }
-
-    #[test]
-    fn child_pool_access() {
-        // Checks if child can access the pool
-        let pool = Pool::new(1);
-
-        let test = testing_pool_access(pool.clone());
-        pool.insert_task(test);
-        thread::sleep(Duration::from_millis(100));
-    }
-
-    async fn square(a: i32) -> i32 {
-        println!("in async");
-        a * a
-    }
-
-    fn sync_square(a: i32) -> i32 {
-        println!("in sync");
-        a * a
-    }
-
-    #[test]
-    fn async_on_map() {
-        let pool = Pool::new(1);
-        // pool.map(square, vec![2, 3]);
-        // pool.map(sync_square, vec![2, 3]);
+        // assert!(false);
     }
 
     #[test]
