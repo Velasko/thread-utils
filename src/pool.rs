@@ -106,10 +106,48 @@ impl Pool {
         )
     }
 
-    pub fn join_pool_until(&self, future: AsyncFn!()) {
+    pub fn join_pool_until<F, R>(&self, future: F) -> R
+    where
+        F: Future<Output = R> + 'static + Send,
+        R: 'static,
+    {
         // Uses the current thread as part of the pool.
         // Once the future is completed, return its value
-        todo!();
+
+        // todo!
+        // - check if thread not already in pool.
+        // - Set child::POOL.set(Some(self.clone()));
+        // -
+        let awaited_task = self.insert_task(future);
+        loop {
+            match awaited_task.try_pop() {
+                Some(ret_val) => return ret_val,
+                None => {
+                    match self.queue.try_pop() {
+                        Some(task) => {
+                            let mut future_slot = task.future.lock().unwrap();
+                            if let Some(mut future) = future_slot.take() {
+                                // Create a `LocalWaker` from the task itself
+                                let waker = waker_ref(&task);
+                                let context = &mut Context::from_waker(&waker);
+                                // `BoxFuture<T>` is a type alias for
+                                // `Pin<Box<dyn Future<Output = T> + Send + 'static>>`.
+                                // We can get a `Pin<&mut dyn Future + Send + 'static>`
+                                // from it by calling the `Pin::as_mut` method.
+                                if future.as_mut().poll(context).is_pending() {
+                                    // We're not done processing the future, so put it
+                                    // back in its task to be run again in the future.
+                                    *future_slot = Some(future);
+                                }
+                            }
+                        }
+                        None => {
+                            thread::sleep(std::time::Duration::from_millis(10));
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
