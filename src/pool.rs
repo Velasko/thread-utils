@@ -17,12 +17,6 @@ use crate::child;
 use crate::queue::Queue;
 use crate::task::Task;
 
-macro_rules! AsyncFn {
-     () => {
-         impl Future<Output = ()> + 'static + Send
-     };
- }
-
 pub struct Pool {
     this: Weak<Self>,
     workers: Arc<Vec<thread::JoinHandle<()>>>,
