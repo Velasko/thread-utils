@@ -67,8 +67,8 @@ pub fn thread_operation(pool: Weak<Pool>) {
 mod tests {
     use super::*;
 
-    async fn testing_pool_access(global: Arc<Pool>) {
-        assert!(get_thread_pool().is_some_and(|local| Arc::as_ptr(&local) != Arc::as_ptr(&global)));
+    async fn get_child_pool() -> Option<Arc<Pool>> {
+        get_thread_pool()
     }
 
     #[test]
@@ -76,16 +76,24 @@ mod tests {
         assert!(get_thread_pool().is_none());
     }
 
-    // #[test]
+    #[test]
+    fn get_val_ret() {
+        let func = async || 3;
+        let pool = Pool::new(1);
+        let ret = pool.insert_task(func()).pop();
+        assert_eq!(3, ret);
+    }
+
+    #[test]
     fn pool_is_set_on_create() {
         assert!(get_thread_pool().is_none());
 
         // Creates pool and checks if child can access is
         let pool = Pool::new(1);
 
-        let test = testing_pool_access(pool.clone());
-        pool.insert_task(test);
-        thread::sleep(Duration::from_millis(100));
-        todo!("Fetch value back");
+        let test = get_child_pool();
+        let child_pool = pool.insert_task(test).pop();
+
+        assert!(child_pool.is_some_and(|val| Arc::as_ptr(&val) == Arc::as_ptr(&pool)));
     }
 }
