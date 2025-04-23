@@ -35,7 +35,7 @@ impl Pool {
             let mut pool = Self {
                 this: pool_ref.clone(),
                 workers: Arc::new(vec![]),
-                queue: Queue::default(),
+                queue: Queue::new(),
             };
 
             for _ in 0..thread_ammount {

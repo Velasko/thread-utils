@@ -11,7 +11,7 @@ pub struct Queue<T> {
 }
 
 impl<T> Queue<T> {
-    pub fn default() -> Arc<Self> {
+    pub fn new() -> Arc<Self> {
         Arc::new(Self {
             data: RwLock::new(RefCell::new(VecDeque::new())),
             notifier: Condvar::new(),
@@ -76,7 +76,7 @@ mod tests {
 
     #[test]
     fn queue_fifo() {
-        let queue = Queue::default();
+        let queue = Queue::new();
         let a = 0;
         let b = 1;
         queue.push(a);
@@ -90,7 +90,7 @@ mod tests {
     fn pop_empty() {
         let value: i32 = 3;
 
-        let q: Arc<Queue<i32>> = Queue::default();
+        let q: Arc<Queue<i32>> = Queue::new();
 
         let p = q.clone();
         let pop1 = thread::spawn(move || p.pop());
@@ -110,7 +110,7 @@ mod tests {
     fn concurrent_popping() {
         let value: i32 = 3;
 
-        let q: Arc<Queue<i32>> = Queue::default();
+        let q: Arc<Queue<i32>> = Queue::new();
         q.push(value.clone());
 
         let p1 = q.clone();
