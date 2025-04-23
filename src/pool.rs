@@ -106,17 +106,6 @@ impl Pool {
         )
     }
 
-    pub fn idle_wait<'t, 'c, 's, T, C, S>(&self, func: fn(T) -> C, args: Vec<T>)
-    where
-        T: 't + UnwindSafe,
-        C: Future<Output = S> + 'c + Send,
-        S: 's,
-    {
-        // parse a coroutine
-        // returns a join handle. Will wake once the task is finished
-        todo!();
-    }
-
     pub fn join_pool_until(&self, future: AsyncFn!()) {
         // Uses the current thread as part of the pool.
         // Once the future is completed, return its value
