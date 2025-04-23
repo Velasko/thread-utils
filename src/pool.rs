@@ -57,7 +57,20 @@ impl Pool {
         Arc::get_mut(&mut self.workers).unwrap().push(new_thread);
     }
 
-    pub fn insert_task(&self, future: AsyncFn!()) {
+    pub fn insert_task<F, R>(&self, future: F)
+    where
+        F: Future<Output = R> + Send + 'static,
+    {
+        let wrapped = async move || {
+            future.await;
+        };
+        self._insert_task(wrapped());
+    }
+
+    fn _insert_task<F>(&self, future: F)
+    where
+        F: Future<Output = ()> + Send + 'static,
+    {
         let future = future.boxed();
         let task = Arc::new(Task {
             future: Mutex::new(Some(future)),
