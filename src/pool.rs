@@ -13,7 +13,7 @@ use futures::{
 
 use tuples::*;
 
-use crate::child;
+use crate::child::{get_thread_pool, thread_operation, POOL};
 use crate::queue::Queue;
 use crate::task::Task;
 
@@ -47,7 +47,7 @@ impl Pool {
 
     fn spawn_child(&mut self) {
         let self_ref: Weak<Pool> = self.this.clone();
-        let new_thread = thread::spawn(move || child::thread_operation(self_ref));
+        let new_thread = thread::spawn(move || thread_operation(self_ref));
         Arc::get_mut(&mut self.workers).unwrap().push(new_thread);
     }
 
@@ -113,9 +113,27 @@ impl Pool {
         // - Set child::POOL.set(Some(self.clone()));
         // -
         let awaited_task = self.insert_task(future);
+        match get_thread_pool() {
+            Some(pool) => {}
+            None => {
+                POOL.set(Some(self.this.clone()));
+            }
+        }
+
         loop {
             match awaited_task.try_pop() {
-                Some(ret_val) => return ret_val,
+                Some(ret_val) => {
+                    // exiting function
+                    let curr_thread = thread::current().id();
+                    if self
+                        .workers
+                        .iter()
+                        .all(|thandle| thandle.thread().id() != curr_thread)
+                    {
+                        POOL.set(None);
+                    }
+                    return ret_val;
+                }
                 None => {
                     match self.queue.try_pop() {
                         Some(task) => {

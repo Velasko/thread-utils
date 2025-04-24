@@ -14,7 +14,7 @@ use crate::queue::Queue;
 use crate::task::Task;
 
 thread_local! {
-    static POOL: RefCell<Option<Weak<Pool>>> = RefCell::new(None);
+    pub(crate) static POOL: RefCell<Option<Weak<Pool>>> = RefCell::new(None);
 }
 
 pub fn get_thread_pool() -> Option<Arc<Pool>> {
@@ -22,7 +22,7 @@ pub fn get_thread_pool() -> Option<Arc<Pool>> {
         .flatten()
 }
 
-pub fn thread_operation(pool: Weak<Pool>) {
+pub(crate) fn thread_operation(pool: Weak<Pool>) {
     POOL.set(Some(pool.clone()));
 
     let queue: Arc<Queue<Arc<Task>>> = {
