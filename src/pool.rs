@@ -130,6 +130,7 @@ impl Pool {
                         .iter()
                         .all(|thandle| thandle.thread().id() != curr_thread)
                     {
+                        // If the thread wasn't part of the
                         POOL.set(None);
                     }
                     return ret_val;
@@ -244,5 +245,16 @@ mod tests {
         };
 
         assert_eq!(Arc::strong_count(&arc_pool), 1);
+    }
+
+    #[test]
+    fn pool_joining() {
+        // Test if main can join the pool
+        let pool = Pool::new(0);
+
+        let task = async || 1;
+        let task_ret = pool.join_pool_until(task());
+
+        assert_eq!(task_ret, 1);
     }
 }
